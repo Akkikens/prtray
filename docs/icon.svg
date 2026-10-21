@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3B82F6"/>
+      <stop offset="1" stop-color="#1D4ED8"/>
+    </linearGradient>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="185" ry="185" fill="url(#bg)"/>
+  <!-- tray -->
+  <path d="M252 590 V716 Q252 768 304 768 H720 Q772 768 772 716 V590" fill="none" stroke="#BFDBFE" stroke-width="58" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- pull request glyph: two nodes joined by a line, one branch with an arrow -->
+  <g fill="none" stroke="#FFFFFF" stroke-width="46" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="394" cy="298" r="58"/>
+    <circle cx="394" cy="552" r="58"/>
+    <line x1="394" y1="356" x2="394" y2="494"/>
+    <circle cx="630" cy="552" r="58"/>
+    <path d="M630 494 V336"/>
+    <path d="M566 392 L630 328 L694 392"/>
+  </g>
+</svg>
