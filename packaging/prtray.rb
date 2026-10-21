@@ -7,7 +7,7 @@ cask "prtray" do
   desc "Graphite-style GitHub PR tray for the menu bar"
   homepage "https://github.com/Akkikens/prtray"
 
-  depends_on macos: ">= :sonoma"
+  depends_on macos: :sonoma
 
   app "PRTray.app"
 
