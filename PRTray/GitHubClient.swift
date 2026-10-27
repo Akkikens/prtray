@@ -152,7 +152,100 @@ final class GitHubClient {
         return out
     }
 
+    // MARK: - Notifications (REST)
+
+    /// Notification threads updated in the last `days` days, read and unread, newest first.
+    /// Only reasons in `InboxItem.involving` are kept: watching and CI noise is dropped.
+    func fetchInbox(days: Int = 7) async throws -> [InboxItem] {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        let since = f.string(from: Date().addingTimeInterval(-Double(days) * 24 * 3600))
+        var out: [InboxItem] = []
+        for page in 1...4 {
+            let (data, _) = try await rest("notifications?all=true&since=\(since)&per_page=50&page=\(page)")
+            guard let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+                throw LoadError.api("unreadable notifications")
+            }
+            out += arr.compactMap(Self.parseNotification)
+            if arr.count < 50 { break }
+        }
+        let owners = Set(self.owners)
+        return out
+            .filter { InboxItem.involving.contains($0.reason) }
+            .filter { owners.isEmpty || owners.contains(String($0.repo.split(separator: "/").first ?? "").lowercased()) }
+            .sorted { $0.updatedAt > $1.updatedAt }
+    }
+
+    /// Marks one thread read on GitHub. Failures are ignored: the next poll shows the truth.
+    func markRead(_ threadID: String) async {
+        _ = try? await rest("notifications/threads/\(threadID)", method: "PATCH")
+    }
+
+    /// Marks everything up to now read.
+    func markAllRead() async {
+        _ = try? await rest("notifications", method: "PUT", body: ["read": true])
+    }
+
+    private static func parseNotification(_ n: [String: Any]) -> InboxItem? {
+        guard let id = n["id"] as? String,
+              let reason = n["reason"] as? String,
+              let subject = n["subject"] as? [String: Any],
+              let title = subject["title"] as? String,
+              let repoObj = n["repository"] as? [String: Any],
+              let repo = repoObj["full_name"] as? String,
+              let updated = (n["updated_at"] as? String).flatMap({ iso.date(from: $0) })
+        else { return nil }
+        let type = subject["type"] as? String ?? ""
+        let apiURL = subject["url"] as? String
+        let number = apiURL.flatMap { Int($0.split(separator: "/").last ?? "") }
+        return InboxItem(id: id, reason: reason, title: title, repo: repo, number: number, type: type,
+                         url: htmlURL(apiURL, repo: repo, type: type, number: number),
+                         updatedAt: updated, unread: n["unread"] as? Bool ?? false)
+    }
+
+    /// The API gives api.github.com subject URLs; map them to the page a person opens.
+    static func htmlURL(_ api: String?, repo: String, type: String, number: Int?) -> URL {
+        let base = "https://github.com/\(repo)"
+        switch (type, number) {
+        case ("PullRequest", let n?): return URL(string: "\(base)/pull/\(n)")!
+        case ("Issue", let n?): return URL(string: "\(base)/issues/\(n)")!
+        case ("Discussion", let n?): return URL(string: "\(base)/discussions/\(n)")!
+        case ("Release", _): return URL(string: "\(base)/releases")!
+        default: return URL(string: base)!
+        }
+    }
+
     // MARK: - Internals
+
+    private func rest(_ path: String, method: String = "GET", body: [String: Any]? = nil) async throws -> (Data, HTTPURLResponse) {
+        guard let token = await resolveToken() else { throw LoadError.noToken }
+        guard let url = URL(string: "https://api.github.com/" + path) else { throw LoadError.api("bad url") }
+        var req = URLRequest(url: url, timeoutInterval: 30)
+        req.httpMethod = method
+        req.setValue("bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue("PRTray", forHTTPHeaderField: "User-Agent")
+        req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        // Without this, URLSession may serve a cached list and new notifications show up late.
+        req.cachePolicy = .reloadIgnoringLocalCacheData
+        if let body {
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.httpBody = try JSONSerialization.data(withJSONObject: body)
+        }
+        let data: Data, resp: URLResponse
+        do { (data, resp) = try await URLSession.shared.data(for: req) }
+        catch { throw LoadError.offline(error.localizedDescription) }
+        guard let http = resp as? HTTPURLResponse else { throw LoadError.api("no response") }
+        if http.statusCode == 401 {
+            if source == .keychain { Keychain.delete() }
+            self.token = nil; self.source = nil
+            throw LoadError.unauthorized
+        }
+        if http.statusCode >= 400 {
+            let msg = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["message"] as? String
+            throw LoadError.api("HTTP \(http.statusCode)" + (msg.map { ": \($0)" } ?? ""))
+        }
+        return (data, http)
+    }
 
     private func graphQL(_ query: String) async throws -> [String: Any] {
         guard let token = await resolveToken() else { throw LoadError.noToken }

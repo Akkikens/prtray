@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Inbox: GitHub notifications that involve you (mentions, review requests, comments, assignments, your threads) from the last 7 days, grouped by day (Today, Yesterday, then weekday), newest first. Unread rows are marked ●, mentions @. Clicking a row opens it and marks it read; "Mentions only" filter and "Mark all as read". Toggle it under Sections to display.
+- Desktop notification when someone @mentions you or your team.
+
 ## 1.0.0
 
 First public release.

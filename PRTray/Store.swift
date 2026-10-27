@@ -8,6 +8,13 @@ import AppKit
 @MainActor
 final class Store: NSObject, UNUserNotificationCenterDelegate {
     var snapshot = Snapshot()
+    var inbox: [InboxItem] = []
+    var inboxError: LoadError?
+    var inboxUnread: Int { inbox.filter(\.unread).count }
+    var inboxUnreadMentions: Int { inbox.filter { $0.unread && $0.isMention }.count }
+    var inboxDays: [InboxDay] { InboxDay.group(mentionsOnly ? inbox.filter(\.isMention) : inbox) }
+    var mentionsOnly: Bool { didSet { UserDefaults.standard.set(mentionsOnly, forKey: "inboxMentionsOnly") } }
+    var showInbox: Bool { didSet { UserDefaults.standard.set(showInbox, forKey: "showInbox") } }
     var error: LoadError?
     var lastRefreshed: Date?
     var isLoading = false
@@ -69,6 +76,8 @@ final class Store: NSObject, UNUserNotificationCenterDelegate {
         visible = Set(saved ?? SectionID.allCases.map(\.rawValue))
         pinnedRepos = d.string(forKey: "pinnedRepos") ?? ""
         ownersFilter = d.string(forKey: "ownersFilter") ?? ""
+        mentionsOnly = d.object(forKey: "inboxMentionsOnly") as? Bool ?? false
+        showInbox = d.object(forKey: "showInbox") as? Bool ?? true
         super.init()
         UNUserNotificationCenter.current().delegate = self
         if notificationsOn { requestAuth() }
@@ -135,6 +144,8 @@ final class Store: NSObject, UNUserNotificationCenterDelegate {
     func refresh(force: Bool = false) async {
         if demo {
             snapshot = Demo.snapshot()
+            inbox = Demo.inbox()
+            inboxError = nil
             avatars = Demo.avatars()
             error = nil
             lastRefreshed = Date()
@@ -159,6 +170,52 @@ final class Store: NSObject, UNUserNotificationCenterDelegate {
             if case .unauthorized = e { hasKeychainToken = Keychain.read() != nil; if !hasKeychainToken { signedInLogin = nil; UserDefaults.standard.removeObject(forKey: "githubLogin") } }
         } catch {
             self.error = .api(error.localizedDescription)
+        }
+        if showInbox { await refreshInbox() }
+    }
+
+    // MARK: - Inbox
+
+    private var previousInbox: [InboxItem]?
+
+    /// Fails on its own: a notifications error shows in the Inbox menu and leaves the PR sections alone.
+    private func refreshInbox() async {
+        do {
+            let items = try await client.fetchInbox()
+            if let prev = previousInbox, notificationsOn { notifyNewMentions(prev, items) }
+            previousInbox = items
+            inbox = items
+            inboxError = nil
+        } catch let e as LoadError {
+            inboxError = e
+        } catch {
+            inboxError = .api(error.localizedDescription)
+        }
+    }
+
+    func open(_ item: InboxItem) {
+        NSWorkspace.shared.open(item.url)
+        guard item.unread, !demo else { return }
+        if let i = inbox.firstIndex(where: { $0.id == item.id }) { inbox[i].unread = false }
+        Task { await client.markRead(item.id) }
+    }
+
+    func markAllRead() {
+        for i in inbox.indices { inbox[i].unread = false }
+        guard !demo else { return }
+        Task { await client.markAllRead() }
+    }
+
+    private func notifyNewMentions(_ old: [InboxItem], _ new: [InboxItem]) {
+        // A thread already unread before this poll was announced then (or predates launch).
+        let wasUnread = Set(old.filter(\.unread).map(\.id))
+        for item in new where item.unread && item.isMention && !wasUnread.contains(item.id) {
+            let c = UNMutableNotificationContent()
+            c.title = item.reason == "team_mention" ? "Your team was mentioned" : "You were mentioned"
+            c.body = "\(item.shortRepo)" + (item.number.map { " #\($0)" } ?? "") + ": \(item.title)"
+            c.sound = .default
+            c.userInfo = ["url": item.url.absoluteString]
+            UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: c, trigger: nil))
         }
     }
 
@@ -197,6 +254,8 @@ final class Store: NSObject, UNUserNotificationCenterDelegate {
         client.resetToken()
         snapshot = Snapshot()
         previous = nil
+        inbox = []
+        previousInbox = nil
         Task { await refresh(force: true) }
     }
 

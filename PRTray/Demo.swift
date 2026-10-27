@@ -63,6 +63,22 @@ enum Demo {
         return s
     }
 
+    static func inbox() -> [InboxItem] {
+        func item(_ id: String, _ reason: String, _ title: String, _ repo: String, _ n: Int, _ type: String = "PullRequest", ago: Double, unread: Bool = true) -> InboxItem {
+            InboxItem(id: id, reason: reason, title: title, repo: repo, number: n, type: type,
+                      url: GitHubClient.htmlURL(nil, repo: repo, type: type, number: n),
+                      updatedAt: Date().addingTimeInterval(-ago), unread: unread)
+        }
+        return [
+            item("d1", "mention", "Add retry with backoff to webhook delivery", "acme/api", 482, ago: 900),
+            item("d2", "review_requested", "Fix flaky checkout test on slow runners", "acme/web", 1317, ago: 5_000),
+            item("d3", "comment", "Dark mode for the settings page", "acme/web", 1309, ago: 20_000, unread: false),
+            item("d4", "team_mention", "Q4 on-call rotation", "acme/docs", 91, "Issue", ago: 100_000),
+            item("d5", "assign", "Search results ignore archived filter", "acme/web", 1288, "Issue", ago: 110_000, unread: false),
+            item("d6", "mention", "Migrate sessions table to uuid keys", "acme/api", 465, ago: 190_000, unread: false),
+        ]
+    }
+
     /// Avatars for every fake author, keyed by the fake URL.
     static func avatars() -> [URL: NSImage] {
         var out: [URL: NSImage] = [:]

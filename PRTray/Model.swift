@@ -99,3 +99,63 @@ enum LoadError: Error, LocalizedError {
         }
     }
 }
+
+/// One GitHub notification thread (REST /notifications).
+struct InboxItem: Identifiable, Equatable {
+    let id: String            // thread id
+    let reason: String        // mention, team_mention, review_requested, comment, assign, author, state_change, ...
+    let title: String
+    let repo: String          // owner/name
+    let number: Int?
+    let type: String          // PullRequest, Issue, Release, Discussion, CheckSuite, ...
+    let url: URL              // github.com page
+    let updatedAt: Date
+    var unread: Bool
+
+    var isMention: Bool { reason == "mention" || reason == "team_mention" }
+    var shortRepo: String { repo.split(separator: "/").last.map(String.init) ?? repo }
+
+    /// Short verb for the row, so the reason reads without an icon legend.
+    var reasonLabel: String {
+        switch reason {
+        case "mention": return "mentioned you"
+        case "team_mention": return "mentioned your team"
+        case "review_requested": return "review requested"
+        case "comment": return "comment"
+        case "assign": return "assigned"
+        case "author": return "your thread"
+        case "state_change": return "state changed"
+        case "ci_activity": return "CI"
+        case "approval_requested": return "approval requested"
+        case "manual": return "subscribed"
+        case "subscribed": return "watching"
+        default: return reason.replacingOccurrences(of: "_", with: " ")
+        }
+    }
+
+    /// Reasons that mean someone actually pulled you in, not repo watching or CI noise.
+    static let involving: Set<String> = ["mention", "team_mention", "review_requested", "comment", "assign", "author", "state_change", "approval_requested", "manual"]
+}
+
+/// Inbox items grouped by calendar day, newest day first and newest item first within a day.
+struct InboxDay: Identifiable {
+    let day: Date
+    let items: [InboxItem]
+    var id: Date { day }
+
+    var title: String {
+        let cal = Calendar.current
+        if cal.isDateInToday(day) { return "Today" }
+        if cal.isDateInYesterday(day) { return "Yesterday" }
+        let f = DateFormatter()
+        f.setLocalizedDateFormatFromTemplate("EEEE MMM d")
+        return f.string(from: day)
+    }
+
+    static func group(_ items: [InboxItem]) -> [InboxDay] {
+        let cal = Calendar.current
+        return Dictionary(grouping: items) { cal.startOfDay(for: $0.updatedAt) }
+            .map { InboxDay(day: $0.key, items: $0.value.sorted { $0.updatedAt > $1.updatedAt }) }
+            .sorted { $0.day > $1.day }
+    }
+}
