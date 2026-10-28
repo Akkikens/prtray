@@ -109,10 +109,14 @@ struct InboxItem: Identifiable, Equatable {
     let number: Int?
     let type: String          // PullRequest, Issue, Release, Discussion, CheckSuite, ...
     let url: URL              // github.com page
-    let updatedAt: Date
+    var updatedAt: Date
     var unread: Bool
+    var commentURL: String? = nil  // API url of the thread's latest comment (the subject itself when none)
+    var actor: String? = nil       // the person behind the latest activity, when known
 
     var isMention: Bool { reason == "mention" || reason == "team_mention" }
+    /// Pulled in on purpose by someone: always shown, even with "People only" on.
+    var isDirected: Bool { InboxItem.directed.contains(reason) }
     var shortRepo: String { repo.split(separator: "/").last.map(String.init) ?? repo }
 
     /// Short verb for the row, so the reason reads without an icon legend.
@@ -135,6 +139,7 @@ struct InboxItem: Identifiable, Equatable {
 
     /// Reasons that mean someone actually pulled you in, not repo watching or CI noise.
     static let involving: Set<String> = ["mention", "team_mention", "review_requested", "comment", "assign", "author", "state_change", "approval_requested", "manual"]
+    static let directed: Set<String> = ["mention", "team_mention", "review_requested", "approval_requested"]
 }
 
 /// Inbox items grouped by calendar day, newest day first and newest item first within a day.

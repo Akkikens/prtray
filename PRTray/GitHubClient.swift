@@ -156,10 +156,12 @@ final class GitHubClient {
 
     /// Notification threads updated in the last `days` days, read and unread, newest first.
     /// Only reasons in `InboxItem.involving` are kept: watching and CI noise is dropped.
-    func fetchInbox(days: Int = 7) async throws -> [InboxItem] {
+    /// With `peopleOnly`, threads that only moved because of a bot, CI, a label or your own activity are dropped too.
+    func fetchInbox(days: Int = 7, peopleOnly: Bool = false) async throws -> [InboxItem] {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime]
-        let since = f.string(from: Date().addingTimeInterval(-Double(days) * 24 * 3600))
+        let sinceDate = Date().addingTimeInterval(-Double(days) * 24 * 3600)
+        let since = f.string(from: sinceDate)
         var out: [InboxItem] = []
         for page in 1...4 {
             let (data, _) = try await rest("notifications?all=true&since=\(since)&per_page=50&page=\(page)")
@@ -170,10 +172,58 @@ final class GitHubClient {
             if arr.count < 50 { break }
         }
         let owners = Set(self.owners)
-        return out
+        out = out
             .filter { InboxItem.involving.contains($0.reason) }
             .filter { owners.isEmpty || owners.contains(String($0.repo.split(separator: "/").first ?? "").lowercased()) }
-            .sorted { $0.updatedAt > $1.updatedAt }
+        if peopleOnly { out = await keepPeople(out, since: sinceDate) }
+        return out.sorted { $0.updatedAt > $1.updatedAt }
+    }
+
+    struct Commenter { let login: String; let isBot: Bool; let at: Date }
+    /// Keyed by latest-comment URL. A new comment gets a new URL, so entries never go stale.
+    private var commenters: [String: Commenter] = [:]
+    private var viewer: String?
+
+    /// GitHub's `reason` says why you are subscribed, not what just happened: an issue you were
+    /// assigned to resurfaces on every bot comment or label change. Mentions and review requests
+    /// always stay. Everything else stays only if its latest comment is by a person other than
+    /// you, written inside the window; the row then shows that person and that time.
+    private func keepPeople(_ items: [InboxItem], since: Date) async -> [InboxItem] {
+        guard let token = await resolveToken() else { return items }
+        if viewer == nil { viewer = await fetchLogin(token: token) }
+        let missing = Set(items.filter { !$0.isDirected }.compactMap(\.commentURL)).subtracting(commenters.keys)
+        await withTaskGroup(of: (String, Commenter?).self) { group in
+            for u in missing { group.addTask { (u, await Self.commenter(u, token: token)) } }
+            for await (u, c) in group { if let c { commenters[u] = c } }
+        }
+        let me = viewer?.lowercased()
+        return items.compactMap { item in
+            if item.isDirected { return item }
+            guard let u = item.commentURL else { return nil }
+            // A failed lookup keeps the row: better one extra line than a missed comment.
+            guard let c = commenters[u] else { return item }
+            guard !c.isBot, c.login.lowercased() != me, c.at >= since else { return nil }
+            var kept = item
+            kept.actor = c.login
+            kept.updatedAt = min(item.updatedAt, c.at)
+            return kept
+        }
+    }
+
+    private static func commenter(_ api: String, token: String) async -> Commenter? {
+        guard let url = URL(string: api) else { return nil }
+        var req = URLRequest(url: url, timeoutInterval: 30)
+        req.setValue("bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue("PRTray", forHTTPHeaderField: "User-Agent")
+        req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        guard let (data, resp) = try? await URLSession.shared.data(for: req),
+              (resp as? HTTPURLResponse)?.statusCode == 200,
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let user = obj["user"] as? [String: Any],
+              let login = user["login"] as? String,
+              let at = (obj["created_at"] as? String).flatMap({ iso.date(from: $0) })
+        else { return nil }
+        return Commenter(login: login, isBot: user["type"] as? String == "Bot" || login.hasSuffix("[bot]"), at: at)
     }
 
     /// Marks one thread read on GitHub. Failures are ignored: the next poll shows the truth.
@@ -200,7 +250,8 @@ final class GitHubClient {
         let number = apiURL.flatMap { Int($0.split(separator: "/").last ?? "") }
         return InboxItem(id: id, reason: reason, title: title, repo: repo, number: number, type: type,
                          url: htmlURL(apiURL, repo: repo, type: type, number: number),
-                         updatedAt: updated, unread: n["unread"] as? Bool ?? false)
+                         updatedAt: updated, unread: n["unread"] as? Bool ?? false,
+                         commentURL: subject["latest_comment_url"] as? String ?? apiURL)
     }
 
     /// The API gives api.github.com subject URLs; map them to the page a person opens.

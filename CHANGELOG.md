@@ -1,7 +1,8 @@
 # Changelog
 
 ## Unreleased
-
+- Inbox: "People only" (on by default) hides threads that only moved because of a bot, CI or your own activity. Mentions and review requests always show; other rows name the person and the time they commented.
+- Inbox: days with more than 15 items open the rest in a submenu instead of sending you to github.com.
 - Inbox: GitHub notifications that involve you (mentions, review requests, comments, assignments, your threads) from the last 7 days, grouped by day (Today, Yesterday, then weekday), newest first. Unread rows are marked ●, mentions @. Clicking a row opens it and marks it read; "Mentions only" filter and "Mark all as read". Toggle it under Sections to display.
 - Desktop notification when someone @mentions you or your team.
 

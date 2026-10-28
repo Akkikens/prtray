@@ -111,11 +111,16 @@ struct InboxMenu: View {
                         Button { store.open(item) } label: { Text(verbatim: InboxMenu.label(item)) }
                     }
                     if day.items.count > maxPerDay {
-                        Text("+\(day.items.count - maxPerDay) more on github.com")
+                        Menu("\(day.items.count - maxPerDay) more") {
+                            ForEach(day.items.dropFirst(maxPerDay)) { item in
+                                Button { store.open(item) } label: { Text(verbatim: InboxMenu.label(item)) }
+                            }
+                        }
                     }
                 }
             }
             Divider()
+            Toggle("People only (hide bots, CI and your own activity)", isOn: Binding(get: { store.peopleOnly }, set: { store.setPeopleOnly($0) }))
             Toggle("Mentions only", isOn: Binding(get: { store.mentionsOnly }, set: { store.mentionsOnly = $0 }))
             Button("Mark all as read") { store.markAllRead() }.disabled(store.inboxUnread == 0)
             Button("Open github.com/notifications ↗") { NSWorkspace.shared.open(URL(string: "https://github.com/notifications")!) }
@@ -128,7 +133,8 @@ struct InboxMenu: View {
         let at = item.isMention ? "@ " : ""
         var t = item.shortRepo + (item.number.map { " #\($0)" } ?? "") + ": " + item.title
         if t.count > 52 { t = String(t.prefix(51)) + "…" }
-        return dot + at + t + " · " + item.reasonLabel + " · " + age(item.updatedAt)
+        let who = item.actor.map { " · " + $0 } ?? ""
+        return dot + at + t + " · " + item.reasonLabel + who + " · " + age(item.updatedAt)
     }
 
     static func age(_ d: Date, now: Date = Date()) -> String {

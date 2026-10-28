@@ -14,6 +14,7 @@ final class Store: NSObject, UNUserNotificationCenterDelegate {
     var inboxUnreadMentions: Int { inbox.filter { $0.unread && $0.isMention }.count }
     var inboxDays: [InboxDay] { InboxDay.group(mentionsOnly ? inbox.filter(\.isMention) : inbox) }
     var mentionsOnly: Bool { didSet { UserDefaults.standard.set(mentionsOnly, forKey: "inboxMentionsOnly") } }
+    var peopleOnly: Bool { didSet { UserDefaults.standard.set(peopleOnly, forKey: "inboxPeopleOnly") } }
     var showInbox: Bool { didSet { UserDefaults.standard.set(showInbox, forKey: "showInbox") } }
     var error: LoadError?
     var lastRefreshed: Date?
@@ -78,6 +79,7 @@ final class Store: NSObject, UNUserNotificationCenterDelegate {
         ownersFilter = d.string(forKey: "ownersFilter") ?? ""
         mentionsOnly = d.object(forKey: "inboxMentionsOnly") as? Bool ?? false
         showInbox = d.object(forKey: "showInbox") as? Bool ?? true
+        peopleOnly = d.object(forKey: "inboxPeopleOnly") as? Bool ?? true
         super.init()
         UNUserNotificationCenter.current().delegate = self
         if notificationsOn { requestAuth() }
@@ -181,7 +183,7 @@ final class Store: NSObject, UNUserNotificationCenterDelegate {
     /// Fails on its own: a notifications error shows in the Inbox menu and leaves the PR sections alone.
     private func refreshInbox() async {
         do {
-            let items = try await client.fetchInbox()
+            let items = try await client.fetchInbox(peopleOnly: peopleOnly)
             if let prev = previousInbox, notificationsOn { notifyNewMentions(prev, items) }
             previousInbox = items
             inbox = items
@@ -191,6 +193,12 @@ final class Store: NSObject, UNUserNotificationCenterDelegate {
         } catch {
             inboxError = .api(error.localizedDescription)
         }
+    }
+
+    func setPeopleOnly(_ on: Bool) {
+        peopleOnly = on
+        guard !demo else { return }
+        Task { await refreshInbox() }
     }
 
     func open(_ item: InboxItem) {
