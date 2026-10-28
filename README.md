@@ -9,8 +9,9 @@ Graphite-style GitHub PR tray for your Mac menu bar, free and open source.
 ## Features
 
 - One native menu, one line per PR, grouped like a review inbox: needs your review, returned to you, approved, waiting for reviewers, drafts, merging and recently merged, waiting for author.
+- Inbox: your GitHub notifications from the last 7 days, grouped Today, Yesterday, then by day, newest first. Mentions and review requests always show; other threads show only when a person (not a bot, CI or you) commented, and every row names who. Click to open and mark read.
 - Menu bar badge with the number of PRs that need your attention.
-- Notifications when a review is requested, changes are requested, a PR is approved, CI fails, or a PR is merged or closed.
+- Notifications when a review is requested, changes are requested, a PR is approved, CI fails, or a PR is merged or closed, and when someone @mentions you or your team.
 - Pinned repos: list the repos you care about and they sort first in every section. An optional owner filter limits the tray to specific users or organizations.
 - Global shortcut (Option-Command-G) to open the tray, launch at login, configurable polling.
 - Sign in with GitHub in a few clicks. No `gh` required.
@@ -53,7 +54,7 @@ Run with `-demo` to see fake data (used for the screenshot):
 
 ## Privacy
 
-Your GitHub token stays in the macOS Keychain on your Mac. PRTray talks only to `api.github.com` (pull requests, avatars, update check) and `github.com` (sign-in). There is no analytics and no server of ours in between.
+Your GitHub token stays in the macOS Keychain on your Mac. PRTray talks only to `api.github.com` (pull requests, notifications, avatars, update check) and `github.com` (sign-in). There is no analytics and no server of ours in between.
 
 ## License
 

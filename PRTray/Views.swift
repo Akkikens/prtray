@@ -127,7 +127,7 @@ struct InboxMenu: View {
         }
     }
 
-    /// "● @ goldi #6188: ci(chat): group new… · mentioned you · 2h"
+    /// "● @ api #482: Add retry with backoff… · mentioned you · octocat · 2h"
     static func label(_ item: InboxItem) -> String {
         let dot = item.unread ? "● " : "    "
         let at = item.isMention ? "@ " : ""

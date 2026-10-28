@@ -186,19 +186,26 @@ final class GitHubClient {
 
     /// GitHub's `reason` says why you are subscribed, not what just happened: an issue you were
     /// assigned to resurfaces on every bot comment or label change. Mentions and review requests
-    /// always stay. Everything else stays only if its latest comment is by a person other than
-    /// you, written inside the window; the row then shows that person and that time.
+    /// always stay, named after the latest person to comment. Everything else stays only if its
+    /// latest comment is by a person other than you, written inside the window; the row then
+    /// shows that person and that time.
     private func keepPeople(_ items: [InboxItem], since: Date) async -> [InboxItem] {
         guard let token = await resolveToken() else { return items }
         if viewer == nil { viewer = await fetchLogin(token: token) }
-        let missing = Set(items.filter { !$0.isDirected }.compactMap(\.commentURL)).subtracting(commenters.keys)
+        let missing = Set(items.compactMap(\.commentURL)).subtracting(commenters.keys)
         await withTaskGroup(of: (String, Commenter?).self) { group in
             for u in missing { group.addTask { (u, await Self.commenter(u, token: token)) } }
             for await (u, c) in group { if let c { commenters[u] = c } }
         }
         let me = viewer?.lowercased()
         return items.compactMap { item in
-            if item.isDirected { return item }
+            if item.isDirected {
+                // Kept regardless; named when the latest comment is a person's (for a fresh
+                // review request that is the PR's author, who usually asked).
+                var kept = item
+                if let c = item.commentURL.flatMap({ commenters[$0] }), !c.isBot, c.login.lowercased() != me { kept.actor = c.login }
+                return kept
+            }
             guard let u = item.commentURL else { return nil }
             // A failed lookup keeps the row: better one extra line than a missed comment.
             guard let c = commenters[u] else { return item }
