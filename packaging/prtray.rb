@@ -1,5 +1,5 @@
 cask "prtray" do
-  version "1.0.0"
+  version "1.1.0"
   sha256 "663ade893edab11607c681be164229077700dff264eddf47e85daa118c26d692"
 
   url "https://github.com/Akkikens/prtray/releases/download/v#{version}/PRTray.dmg"
