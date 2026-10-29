@@ -17,16 +17,13 @@ struct PR: Identifiable, Equatable {
     let avatarURL: URL?
     let labels: [String]
     let viewerReview: String?
-    var changesRequestedAt: Date? = nil
+    var returnedAt: Date? = nil
     var lastCommitAt: Date? = nil
     var pendingRequests = 0
 
-    /// Changes requested, nobody re-requested, and nothing pushed since.
     var isReturned: Bool {
-        guard reviewDecision == "CHANGES_REQUESTED", pendingRequests == 0 else { return false }
-        guard let cr = changesRequestedAt else { return true }
-        guard let c = lastCommitAt else { return true }
-        return c < cr
+        ReturnedRule.isReturned(decision: reviewDecision, pendingRequests: pendingRequests,
+                                returnedAt: returnedAt, lastCommitAt: lastCommitAt)
     }
 
     var shortRepo: String { repo.split(separator: "/").last.map(String.init) ?? repo }

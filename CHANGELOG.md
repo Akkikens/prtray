@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.1.1
+- Returned to you: a reviewer who asked for changes and then came back with a plain comment review (which clears your re-request) now puts the PR back in Returned, as long as you have not pushed since. Merging main into your branch no longer counts as a push.
+
 ## 1.1.0
 - Inbox: "People only" (on by default) hides threads that only moved because of a bot, CI or your own activity. Mentions and review requests always show; every row names the person behind it, and non-mention rows show when they commented.
 - Inbox: days with more than 15 items open the rest in a submenu instead of sending you to github.com.

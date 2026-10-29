@@ -47,8 +47,8 @@ final class GitHubClient {
       author { login avatarUrl }
       labels(first: 10) { nodes { name } }
       reviewRequests(first: 1) { totalCount }
-      changeReviews: reviews(states: CHANGES_REQUESTED, last: 1) { nodes { submittedAt } }
-      commits(last: 1) { nodes { commit { committedDate statusCheckRollup { state } } } }
+      reviews(last: 30) { nodes { state submittedAt author { login __typename } } }
+      commits(last: 10) { nodes { commit { committedDate parents { totalCount } statusCheckRollup { state } } } }
     }
     """
 
@@ -66,7 +66,8 @@ final class GitHubClient {
     }
 
     /// Section rules follow Graphite's tray:
-    /// - Returned: my open non-draft PRs with changes requested, no pending review requests, and no commits since that review.
+    /// - Returned: my open non-draft PRs with changes requested, no pending review requests, and no non-merge commits since
+    ///   the requesting reviewers' latest review (a COMMENTED follow-up counts).
     /// - Waiting for reviewers: my open non-draft PRs that are neither approved nor returned.
     /// - Waiting for author: others' open PRs I reviewed (any state), minus the ones needing my review.
     /// - Merging: open PRs with the Merge Queue label plus PRs involving me merged in the last 7 days.
@@ -350,10 +351,20 @@ final class GitHubClient {
         let author = n["author"] as? [String: Any]
         let labels = (((n["labels"] as? [String: Any])?["nodes"]) as? [[String: Any]] ?? [])
             .compactMap { $0["name"] as? String }
-        let commit = (((n["commits"] as? [String: Any])?["nodes"]) as? [[String: Any]])?.first?["commit"] as? [String: Any]
-        let rollup = commit?["statusCheckRollup"] as? [String: Any]
-        let crDate = ((((n["changeReviews"] as? [String: Any])?["nodes"]) as? [[String: Any]])?.first?["submittedAt"] as? String).flatMap { iso.date(from: $0) }
-        let commitDate = (commit?["committedDate"] as? String).flatMap { iso.date(from: $0) }
+        let commitNodes = (((n["commits"] as? [String: Any])?["nodes"]) as? [[String: Any]] ?? []).compactMap { $0["commit"] as? [String: Any] }
+        let rollup = commitNodes.last?["statusCheckRollup"] as? [String: Any]   // newest commit
+        let commits = commitNodes.compactMap { c -> ReturnedRule.Commit? in
+            guard let at = (c["committedDate"] as? String).flatMap({ iso.date(from: $0) }) else { return nil }
+            return ReturnedRule.Commit(at: at, parents: (c["parents"] as? [String: Any])?["totalCount"] as? Int ?? 1)
+        }
+        let authorLogin = author?["login"] as? String ?? "ghost"
+        let reviews = (((n["reviews"] as? [String: Any])?["nodes"]) as? [[String: Any]] ?? []).compactMap { r -> ReturnedRule.Review? in
+            guard let state = r["state"] as? String,
+                  let at = (r["submittedAt"] as? String).flatMap({ iso.date(from: $0) }),
+                  let a = r["author"] as? [String: Any], let login = a["login"] as? String else { return nil }
+            return ReturnedRule.Review(author: login, isBot: a["__typename"] as? String == "Bot" || login.hasSuffix("[bot]"),
+                                       state: state, at: at)
+        }
         let pending = (n["reviewRequests"] as? [String: Any])?["totalCount"] as? Int ?? 0
         let ci: CIState
         switch rollup?["state"] as? String {
@@ -368,11 +379,12 @@ final class GitHubClient {
                   conflicting: (n["mergeable"] as? String) == "CONFLICTING",
                   reviewDecision: n["reviewDecision"] as? String,
                   ci: ci,
-                  author: author?["login"] as? String ?? "ghost",
+                  author: authorLogin,
                   avatarURL: (author?["avatarUrl"] as? String).flatMap { URL(string: $0) },
                   labels: labels,
                   viewerReview: (n["viewerLatestReview"] as? [String: Any])?["state"] as? String,
-                  changesRequestedAt: crDate, lastCommitAt: commitDate, pendingRequests: pending)
+                  returnedAt: ReturnedRule.returnedAt(reviews: reviews, prAuthor: authorLogin),
+                  lastCommitAt: ReturnedRule.lastCommitAt(commits), pendingRequests: pending)
     }
 
     /// Pinned repos first, then most recently updated.
